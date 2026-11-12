@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Docs App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loginBox" class="box" style="display:none;">
+    <h2>Login</h2>
+    <p class="hint">Test users: shashwat, gautam, ajaia (password: password123)</p>
+    <input id="username" placeholder="Username">
+    <input id="password" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <p id="loginError" class="error"></p>
+</div>
+
+<div id="homeBox" style="display:none;">
+    <div class="topbar">
+        <span>Logged in as <b id="currentUser"></b></span>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <div class="box">
+        <button onclick="newDocument()">+ New document</button>
+
+        <p>Or import a file as a new document:</p>
+        <input type="file" id="fileInput" accept=".txt,.md">
+        <button onclick="uploadFile()">Upload</button>
+        <p class="hint">Only .txt and .md files are supported (max 1 MB). .docx is not supported.</p>
+        <p id="uploadError" class="error"></p>
+    </div>
+
+    <div class="box">
+        <h3>My documents</h3>
+        <ul id="ownedList"></ul>
+    </div>
+
+    <div class="box">
+        <h3>Shared with me</h3>
+        <ul id="sharedList"></ul>
+    </div>
+</div>
+
+<script>
+    async function checkLogin() {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            const user = await res.json();
+            document.getElementById('currentUser').textContent = user.username;
+            document.getElementById('homeBox').style.display = 'block';
+            document.getElementById('loginBox').style.display = 'none';
+            loadDocuments();
+        } else {
+            document.getElementById('loginBox').style.display = 'block';
+            document.getElementById('homeBox').style.display = 'none';
+        }
+    }
+
+    async function login() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const errorEl = document.getElementById('loginError');
+        errorEl.textContent = '';
+
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, password: password })
+        });
+
+        if (res.ok) {
+            checkLogin();
+        } else {
+            const data = await res.json();
+            errorEl.textContent = data.error;
+        }
+    }
+
+    async function logout() {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        checkLogin();
+    }
+
+    async function loadDocuments() {
+        const res = await fetch('/api/documents');
+        const data = await res.json();
+        fillList('ownedList', data.owned, false);
+        fillList('sharedList', data.shared, true);
+    }
+
+    function fillList(listId, docs, showOwner) {
+        const ul = document.getElementById(listId);
+        ul.innerHTML = '';
+
+        if (docs.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'No documents yet';
+            li.className = 'hint';
+            ul.appendChild(li);
+            return;
+        }
+
+        for (let i = 0; i < docs.length; i++) {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = 'doc.html?id=' + docs[i].id;
+            a.textContent = docs[i].title;
+            li.appendChild(a);
+
+            if (showOwner) {
+                const span = document.createElement('span');
+                span.className = 'hint';
+                span.textContent = '  (owner: ' + docs[i].owner + ')';
+                li.appendChild(span);
+            }
+            ul.appendChild(li);
+        }
+    }
+
+    async function newDocument() {
+        const res = await fetch('/api/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: 'Untitled document' })
+        });
+        const doc = await res.json();
+        window.location.href = 'doc.html?id=' + doc.id;
+    }
+
+    async function uploadFile() {
+        const errorEl = document.getElementById('uploadError');
+        errorEl.textContent = '';
+
+        const input = document.getElementById('fileInput');
+        if (input.files.length === 0) {
+            errorEl.textContent = 'Please choose a file first';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', input.files[0]);
+
+        const res = await fetch('/api/documents/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (res.ok) {
+            const doc = await res.json();
+            window.location.href = 'doc.html?id=' + doc.id;
+        } else {
+            const data = await res.json();
+            errorEl.textContent = data.error;
+        }
+    }
+
+    checkLogin();
+</script>
+</body>
+</html>

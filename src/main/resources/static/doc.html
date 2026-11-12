@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Edit document</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topbar">
+    <a href="index.html">&larr; Back to documents</a>
+    <span id="ownerInfo" class="hint"></span>
+</div>
+
+<p id="pageError" class="error"></p>
+
+<div id="editorArea" style="display:none;">
+    <div class="box">
+        <input id="titleInput" class="title-input">
+        <button onclick="saveDocument()">Save</button>
+        <span id="saveStatus" class="hint"></span>
+    </div>
+
+    <div class="box">
+        <div id="editor"></div>
+    </div>
+
+    <div id="shareBox" class="box" style="display:none;">
+        <h3>Share this document</h3>
+        <input id="shareUsername" placeholder="Username (e.g. bob)">
+        <button onclick="shareDocument()">Share</button>
+        <p id="shareMessage"></p>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+<script>
+    const params = new URLSearchParams(window.location.search);
+    const docId = params.get('id');
+
+    const quill = new Quill('#editor', {
+        theme: 'snow',
+        modules: {
+            toolbar: [
+                [{ header: [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline'],
+                [{ list: 'ordered' }, { list: 'bullet' }]
+            ]
+        }
+    });
+
+    async function loadDocument() {
+        if (!docId) {
+            showError('No document id in URL');
+            return;
+        }
+
+        const res = await fetch('/api/documents/' + docId);
+        if (res.status === 401) {
+            window.location.href = 'index.html';
+            return;
+        }
+        if (!res.ok) {
+            const data = await res.json();
+            showError(data.error);
+            return;
+        }
+
+        const doc = await res.json();
+        document.getElementById('titleInput').value = doc.title;
+        quill.clipboard.dangerouslyPasteHTML(doc.content || '');
+
+        if (doc.isOwner) {
+            document.getElementById('ownerInfo').textContent = 'You own this document';
+            document.getElementById('shareBox').style.display = 'block';
+        } else {
+            document.getElementById('ownerInfo').textContent = 'Shared with you by ' + doc.owner;
+        }
+
+        document.getElementById('editorArea').style.display = 'block';
+    }
+
+    async function saveDocument() {
+        const status = document.getElementById('saveStatus');
+        status.textContent = 'Saving...';
+
+        const res = await fetch('/api/documents/' + docId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: document.getElementById('titleInput').value,
+                content: quill.root.innerHTML
+            })
+        });
+
+        if (res.ok) {
+            status.textContent = 'Saved at ' + new Date().toLocaleTimeString();
+        } else {
+            const data = await res.json();
+            status.textContent = 'Error: ' + data.error;
+        }
+    }
+
+    async function shareDocument() {
+        const msg = document.getElementById('shareMessage');
+        const username = document.getElementById('shareUsername').value;
+
+        const res = await fetch('/api/documents/' + docId + '/share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            msg.className = 'success';
+            msg.textContent = data.message;
+            document.getElementById('shareUsername').value = '';
+        } else {
+            msg.className = 'error';
+            msg.textContent = data.error;
+        }
+    }
+
+    function showError(text) {
+        document.getElementById('pageError').textContent = text;
+    }
+
+    loadDocument();
+</script>
+</body>
+</html>
